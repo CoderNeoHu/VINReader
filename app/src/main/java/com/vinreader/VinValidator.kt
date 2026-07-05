@@ -7,7 +7,7 @@ package com.vinreader
 object VinValidator {
 
     /** 合法的 VIN 字符集（不含 I, O, Q） */
-    private val VALID_CHARS = setOf(
+    val VALID_CHARS = setOf(
         '0','1','2','3','4','5','6','7','8','9',
         'A','B','C','D','E','F','G','H','J','K',
         'L','M','N','P','R','S','T','U','V','W','X','Y','Z'

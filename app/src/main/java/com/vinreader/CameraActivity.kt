@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputFilter
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,7 +80,6 @@ class CameraActivity : AppCompatActivity() {
         binding.btnCapture.setOnClickListener { takePhoto() }
         binding.btnGallery.setOnClickListener { pickImageLauncher.launch("image/*") }
         binding.btnRetake.setOnClickListener {
-            confirmedVin = null
             capturedBitmap = null
             ocrRawText = ""
             showCameraPreview()
@@ -89,7 +87,6 @@ class CameraActivity : AppCompatActivity() {
         binding.btnConfirm.setOnClickListener {
             val vin = binding.etVinEdit.text.toString().trim().uppercase()
             if (vin.length == 17 && VinValidator.isValidFormat(vin)) {
-                confirmedVin = vin
                 val intent = Intent().putExtra("vin", vin)
                 setResult(RESULT_OK, intent)
                 finish()
@@ -215,19 +212,6 @@ class CameraActivity : AppCompatActivity() {
             binding.tvSuggestions.visibility = View.GONE
             binding.btnSwitchVin.visibility = View.GONE
         }
-    }
-
-    /** 设置最大长度过滤器 */
-    private fun setupVinInputFilters() {
-        binding.etVinEdit.filters = arrayOf(
-            InputFilter { source, start, end, _, _, _ ->
-                val filtered = source.substring(start, end)
-                    .uppercase()
-                    .filter { it in VinValidator.VALID_CHARS || it in setOf('O', 'I', 'Q') }
-                if (filtered != source.substring(start, end)) filtered else null
-            },
-            InputFilter.LengthFilter(17)
-        )
     }
 
     private var candidateList = listOf<VinValidator.CandidateVin>()

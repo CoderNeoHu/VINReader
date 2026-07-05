@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputFilter
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -22,7 +24,8 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var binding: ActivityCameraBinding
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
-    private var detectedVin: String? = null
+    private var capturedBitmap: Bitmap? = null
+    private var ocrRawText: String = ""
 
     private val photoFile by lazy {
         File(cacheDir, "vin_photo_${System.currentTimeMillis()}.jpg")
@@ -33,6 +36,7 @@ class CameraActivity : AppCompatActivity() {
             try {
                 val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
                 if (bitmap != null) {
+                    capturedBitmap = bitmap
                     runOcr(bitmap)
                 } else {
                     Toast.makeText(this@CameraActivity, "图片读取失败", Toast.LENGTH_SHORT).show()
@@ -52,8 +56,12 @@ class CameraActivity : AppCompatActivity() {
             if (uri != null) {
                 try {
                     val bitmap = BitmapFactory.decodeStream(contentResolver.openInputStream(uri))
-                    bitmap?.let { runOcr(it) }
-                        ?: Toast.makeText(this, "图片读取失败", Toast.LENGTH_SHORT).show()
+                    if (bitmap != null) {
+                        capturedBitmap = bitmap
+                        runOcr(bitmap)
+                    } else {
+                        Toast.makeText(this, "图片读取失败", Toast.LENGTH_SHORT).show()
+                    }
                 } catch (e: Exception) {
                     Toast.makeText(this, "图片读取失败：${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                 }
@@ -73,17 +81,20 @@ class CameraActivity : AppCompatActivity() {
         binding.btnCapture.setOnClickListener { takePhoto() }
         binding.btnGallery.setOnClickListener { pickImageLauncher.launch("image/*") }
         binding.btnRetake.setOnClickListener {
-            detectedVin = null
+            confirmedVin = null
+            capturedBitmap = null
+            ocrRawText = ""
             showCameraPreview()
         }
         binding.btnConfirm.setOnClickListener {
-            val vin = detectedVin
-            if (vin != null && vin.length == 17) {
+            val vin = binding.etVinEdit.text.toString().trim().uppercase()
+            if (vin.length == 17 && VinValidator.isValidFormat(vin)) {
+                confirmedVin = vin
                 val intent = Intent().putExtra("vin", vin)
                 setResult(RESULT_OK, intent)
                 finish()
             } else {
-                Toast.makeText(this, "未识别到有效车架号", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "请输入有效的17位车架号", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -127,43 +138,117 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun showCameraPreview() {
-        binding.ivPreview.visibility = android.view.View.GONE
-        binding.tvOcrResult.text = "等待识别..."
-        binding.tvOcrResult.visibility = android.view.View.GONE
-        binding.viewFinder.visibility = android.view.View.VISIBLE
-        binding.btnCapture.visibility = android.view.View.VISIBLE
-        binding.btnGallery.visibility = android.view.View.VISIBLE
-        binding.btnRetake.visibility = android.view.View.GONE
-        binding.btnConfirm.visibility = android.view.View.GONE
-        detectedVin = null
+        binding.ivPreview.visibility = View.GONE
+        binding.tvOcrResult.visibility = View.GONE
+        binding.tilVinEdit.visibility = View.GONE
+        binding.etVinEdit.visibility = View.GONE
+        binding.tvEditHint.visibility = View.GONE
+        binding.tvSuggestions.visibility = View.GONE
+        binding.viewFinder.visibility = View.VISIBLE
+        binding.btnCapture.visibility = View.VISIBLE
+        binding.btnGallery.visibility = View.VISIBLE
+        binding.btnRetake.visibility = View.GONE
+        binding.btnConfirm.visibility = View.GONE
+        binding.btnSwitchVin.visibility = View.GONE
     }
 
-    private fun showResult(bitmap: Bitmap, vin: String?) {
-        binding.viewFinder.visibility = android.view.View.GONE
-        binding.btnCapture.visibility = android.view.View.GONE
-        binding.btnGallery.visibility = android.view.View.GONE
-        binding.ivPreview.visibility = android.view.View.VISIBLE
+    private fun showResults(bitmap: Bitmap) {
+        binding.viewFinder.visibility = View.GONE
+        binding.btnCapture.visibility = View.GONE
+        binding.btnGallery.visibility = View.GONE
+        binding.ivPreview.visibility = View.VISIBLE
         binding.ivPreview.setImageBitmap(bitmap)
-        binding.tvOcrResult.visibility = android.view.View.VISIBLE
+        binding.tilVinEdit.visibility = View.VISIBLE
+        binding.etVinEdit.visibility = View.VISIBLE
+        binding.tvEditHint.visibility = View.VISIBLE
+        binding.btnRetake.text = "重新拍照"
+        binding.btnRetake.visibility = View.VISIBLE
+        binding.btnConfirm.visibility = View.VISIBLE
 
-        if (vin != null) {
-            detectedVin = vin
-            binding.tvOcrResult.text = "识别到车架号：$vin"
-            binding.btnRetake.text = "重新拍照"
-            binding.btnRetake.visibility = android.view.View.VISIBLE
-            binding.btnConfirm.text = "查询此车架号"
-            binding.btnConfirm.visibility = android.view.View.VISIBLE
+        // Use smart correction
+        val candidates = VinValidator.smartCorrect(ocrRawText)
+
+        if (candidates.isNotEmpty()) {
+            val best = candidates.first()
+            binding.etVinEdit.setText(best.vin)
+            binding.tvOcrResult.text = "识别结果 (可编辑修正)"
+            binding.tvOcrResult.visibility = View.VISIBLE
+
+            // 显示其他候选
+            if (candidates.size > 1) {
+                binding.tvSuggestions.visibility = View.VISIBLE
+                val sb = StringBuilder("其他候选：\n")
+                candidates.drop(1).forEachIndexed { i, c ->
+                    sb.append("${i + 1}. ${c.vin}")
+                    if (c.checksumValid) sb.append(" ✓")
+                    if (c.countryCodeKnown) sb.append(" [${VinValidator.getCountryDescription(c.vin) ?: ""}]")
+                    sb.append("\n")
+                }
+                binding.tvSuggestions.text = sb.toString()
+                binding.btnSwitchVin.visibility = View.VISIBLE
+            } else {
+                binding.tvSuggestions.visibility = View.GONE
+                binding.btnSwitchVin.visibility = View.GONE
+            }
+
+            // 校验位和国家提示
+            val hints = mutableListOf<String>()
+            if (best.checksumValid) hints.add("校验通过 ✓")
+            else hints.add("校验位不符 ⚠")
+            if (best.countryCodeKnown) {
+                val country = VinValidator.getCountryDescription(best.vin) ?: ""
+                hints.add("VIN 首位 ${best.vin[0]} = $country")
+            }
+
+            binding.tvEditHint.text = "提示: ${hints.joinToString(" | ")}\n" +
+                    "中国车 VIN 首位应为 L，如识别为 7 请手动改为 L"
+
+            // 点击切换候选
+            switchCandidates(candidates)
         } else {
-            detectedVin = null
-            binding.tvOcrResult.text = "未识别到车架号，请重试"
-            binding.btnRetake.text = "重新拍照"
-            binding.btnRetake.visibility = android.view.View.VISIBLE
-            binding.btnConfirm.visibility = android.view.View.GONE
+            // 无候选，显示原始文本
+            val raw = ocrRawText.take(200)
+            binding.etVinEdit.setText("")
+            binding.tvOcrResult.text = "未识别到完整车架号"
+            binding.tvOcrResult.visibility = View.VISIBLE
+            binding.tvEditHint.text = "下方显示了识别到的文字，请手动找到 VIN 输入\n识别文字：$raw"
+            binding.tvSuggestions.visibility = View.GONE
+            binding.btnSwitchVin.visibility = View.GONE
+        }
+    }
+
+    /** 设置最大长度过滤器 */
+    private fun setupVinInputFilters() {
+        binding.etVinEdit.filters = arrayOf(
+            InputFilter { source, start, end, _, _, _ ->
+                val filtered = source.substring(start, end)
+                    .uppercase()
+                    .filter { it in VinValidator.VALID_CHARS || it in setOf('O', 'I', 'Q') }
+                if (filtered != source.substring(start, end)) filtered else null
+            },
+            InputFilter.LengthFilter(17)
+        )
+    }
+
+    private var candidateList = listOf<VinValidator.CandidateVin>()
+    private var currentCandidateIndex = 0
+
+    private fun switchCandidates(candidates: List<VinValidator.CandidateVin>) {
+        candidateList = candidates
+        currentCandidateIndex = 0
+
+        binding.btnSwitchVin.setOnClickListener {
+            if (candidateList.size <= 1) return@setOnClickListener
+            currentCandidateIndex = (currentCandidateIndex + 1) % candidateList.size
+            val c = candidateList[currentCandidateIndex]
+            binding.etVinEdit.setText(c.vin)
+            val country = VinValidator.getCountryDescription(c.vin) ?: "未知"
+            Toast.makeText(this, "候选 ${currentCandidateIndex + 1}/${candidateList.size}: ${c.vin} [$country]", Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun runOcr(bitmap: Bitmap) {
-        binding.tvOcrResult.visibility = android.view.View.VISIBLE
+        binding.tvOcrResult.visibility = View.VISIBLE
         binding.tvOcrResult.text = "正在识别..."
 
         val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
@@ -171,22 +256,14 @@ class CameraActivity : AppCompatActivity() {
 
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
-                val fullText = visionText.text
-                val candidates = VinValidator.extractVinFromText(fullText)
-
-                if (candidates.isNotEmpty()) {
-                    val best = candidates.maxByOrNull { c ->
-                        if (VinValidator.isValidChecksum(c)) 100 else c.length
-                    } ?: candidates.first()
-                    showResult(bitmap, best.uppercase())
-                } else {
-                    showResult(bitmap, null)
-                }
+                ocrRawText = visionText.text
+                showResults(bitmap)
                 recognizer.close()
             }
             .addOnFailureListener { e ->
-                binding.tvOcrResult.text = "识别失败: ${e.localizedMessage ?: "请重试"}"
-                showResult(bitmap, null)
+                ocrRawText = ""
+                Toast.makeText(this, "识别失败: ${e.localizedMessage ?: "请重试"}", Toast.LENGTH_SHORT).show()
+                showCameraPreview()
                 recognizer.close()
             }
     }

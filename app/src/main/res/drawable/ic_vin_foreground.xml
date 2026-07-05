@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 放大镜 + VIN 文字图标 -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.65"
+        android:scaleY="0.65"
+        android:translateX="19"
+        android:translateY="19">
+
+        <!-- 放大镜镜框 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M50,22A28,28 0,1,1 22,50A28,28 0,0,1 50,22z" />
+
+        <!-- 放大镜手柄 -->
+        <path
+            android:strokeWidth="6"
+            android:strokeColor="#FFFFFF"
+            android:fillColor="#00000000"
+            android:pathData="M72,72L88,88" />
+
+        <!-- V 字母 -->
+        <path
+            android:fillColor="#1565C0"
+            android:pathData="M36,44L42,58L48,44" />
+        <path
+            android:strokeWidth="3"
+            android:strokeColor="#1565C0"
+            android:fillColor="#00000000"
+            android:pathData="M36,44L42,58L48,44" />
+
+        <!-- I 字母 -->
+        <path
+            android:strokeWidth="3"
+            android:strokeColor="#1565C0"
+            android:fillColor="#00000000"
+            android:pathData="M54,44L54,58" />
+
+        <!-- N 字母 -->
+        <path
+            android:strokeWidth="3"
+            android:strokeColor="#1565C0"
+            android:fillColor="#00000000"
+            android:pathData="M60,58L60,44L70,58L70,44" />
+
+    </group>
+</vector>

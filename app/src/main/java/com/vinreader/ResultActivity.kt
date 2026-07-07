@@ -3,7 +3,7 @@ package com.vinreader
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.vinreader.api.VinApiService
+import com.vinreader.api.VinDeepseekDecoder
 import com.vinreader.databinding.ActivityResultBinding
 import kotlinx.coroutines.*
 
@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
-    private val api = VinApiService.create()
+    private val deepseekDecoder = VinDeepseekDecoder(BuildConfig.DEEPSEEK_API_KEY)
     private var searchJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,6 +35,8 @@ class ResultActivity : AppCompatActivity() {
         val raw = intent.getSerializableExtra("vin_result")
         if (raw is java.util.HashMap<*, *>) {
             val resultMap = raw as java.util.HashMap<String, String>
+            val vin = intent.getStringExtra("vin") ?: ""
+            binding.tvTitle.text = if (vin.isNotEmpty()) "VIN: $vin" else "查询结果"
             displayResults(resultMap)
         } else {
             binding.progressBar.visibility = android.view.View.GONE
@@ -49,19 +51,15 @@ class ResultActivity : AppCompatActivity() {
 
         searchJob = CoroutineScope(Dispatchers.IO).launch {
             try {
-                val response = api.decodeVin(vin)
+                val result = deepseekDecoder.decodeVin(vin)
                 withContext(Dispatchers.Main) {
                     binding.progressBar.visibility = android.view.View.GONE
-                    if (response.Results.isNotEmpty()) {
-                        val result = response.Results.first()
-                        // NHTSA ErrorCode 0=成功, 4=无效VIN, 空=可能部分数据
-                        val hasData = result.Make?.isNotEmpty() == true
-                        if (result.ErrorCode == "0" || hasData) {
-                            displayResults(result.toDisplayMap())
-                        } else {
-                            binding.tvError.text = "查询失败：${result.ErrorText ?: "未找到信息"}"
-                            binding.tvError.visibility = android.view.View.VISIBLE
-                        }
+                    if (result.containsKey("错误")) {
+                        binding.tvError.text = result["错误"]
+                        binding.tvError.visibility = android.view.View.VISIBLE
+                    } else if (result.isNotEmpty()) {
+                        binding.tvTitle.text = "VIN: $vin"
+                        displayResults(result)
                     } else {
                         binding.tvError.text = "未查询到该车架号对应车辆信息"
                         binding.tvError.visibility = android.view.View.VISIBLE

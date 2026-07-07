@@ -17,8 +17,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val deepseekKey: String = project.findProperty("DEEPSEEK_API_KEY") as? String ?: ""
+
     buildTypes {
+        debug {
+            buildConfigField("String", "DEEPSEEK_API_KEY", "\"${deepseekKey}\"")
+        }
         release {
+            buildConfigField("String", "DEEPSEEK_API_KEY", "\"${deepseekKey}\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -39,6 +45,7 @@ android {
 
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
 }
 

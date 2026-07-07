@@ -9,14 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.vinreader.api.VinApiService
+import com.vinreader.api.VinDeepseekDecoder
 import com.vinreader.databinding.ActivityMainBinding
 import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private val api = VinApiService.create()
+    private val deepseekDecoder = VinDeepseekDecoder(BuildConfig.DEEPSEEK_API_KEY)
     private var searchJob: Job? = null
     private var lastQueriedVin: String? = null
 
@@ -49,7 +49,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupVinInput() {
-        // 限制输入只能为 VIN 合法字符
         binding.etVin.filters = arrayOf(
             android.text.InputFilter { source, start, end, _, _, _ ->
                 source.substring(start, end).uppercase()
@@ -105,34 +104,26 @@ class MainActivity : AppCompatActivity() {
         binding.progressBar.visibility = android.view.View.VISIBLE
         binding.btnQuery.isEnabled = false
         binding.btnScan.isEnabled = false
+        binding.tvStatus.text = "正在通过 DeepSeek 查询..."
+        binding.tvStatus.visibility = android.view.View.VISIBLE
 
         searchJob = CoroutineScope(Dispatchers.IO).launch {
             try {
-                val response = api.decodeVin(vin)
+                val result = deepseekDecoder.decodeVin(vin)
                 withContext(Dispatchers.Main) {
                     binding.progressBar.visibility = android.view.View.GONE
                     binding.btnQuery.isEnabled = true
                     binding.btnScan.isEnabled = true
+                    binding.tvStatus.visibility = android.view.View.GONE
 
-                    if (response.Results.isNotEmpty()) {
-                        val result = response.Results.first()
-                        when {
-                            result.ErrorCode == "0" || (result.Make?.isNotEmpty() == true) -> {
-                                // 查询成功
-                                val intent = Intent(this@MainActivity, ResultActivity::class.java)
-                                intent.putExtra("vin_result", java.util.HashMap(result.toDisplayMap()))
-                                startActivity(intent)
-                            }
-                            result.ErrorCode == "4" -> {
-                                // VIN 格式/校验错误
-                                showVinErrorDialog(vin, "车架号校验失败")
-                            }
-                            else -> {
-                                // 其他 NHTSA 错误
-                                val errorText = result.ErrorText ?: result.ErrorCode ?: "未知错误"
-                                showVinErrorDialog(vin, errorText)
-                            }
-                        }
+                    if (result.containsKey("错误")) {
+                        showVinErrorDialog(vin, result["错误"] ?: "查询失败")
+                    } else if (result.isNotEmpty()) {
+                        // 查询成功
+                        val intent = Intent(this@MainActivity, ResultActivity::class.java)
+                        intent.putExtra("vin_result", java.util.HashMap(result))
+                        intent.putExtra("vin", vin)
+                        startActivity(intent)
                     } else {
                         showVinErrorDialog(vin, "未查询到该车架号对应车辆信息")
                     }
@@ -142,6 +133,7 @@ class MainActivity : AppCompatActivity() {
                     binding.progressBar.visibility = android.view.View.GONE
                     binding.btnQuery.isEnabled = true
                     binding.btnScan.isEnabled = true
+                    binding.tvStatus.visibility = android.view.View.GONE
                     Toast.makeText(
                         this@MainActivity,
                         "网络错误：${e.localizedMessage ?: "连接失败"}",
@@ -156,7 +148,6 @@ class MainActivity : AppCompatActivity() {
      * VIN 查询失败时弹窗让用户修正
      */
     private fun showVinErrorDialog(originalVin: String, errorMsg: String) {
-        // 生成修正建议
         val candidates = VinValidator.smartCorrect(originalVin)
             .filter { it.vin != originalVin }
             .take(3)
@@ -164,8 +155,6 @@ class MainActivity : AppCompatActivity() {
         val message = StringBuilder()
         message.append("查询失败：$errorMsg\n\n")
         message.append("原始输入：$originalVin\n")
-        message.append("首位 '${originalVin.firstOrNull()}' 代表：${VinValidator.getCountryDescription(originalVin) ?: "未知区域"}\n")
-        message.append("中国车 VIN 首位应为 L (代表中国)\n")
 
         if (candidates.isNotEmpty()) {
             message.append("\n是否尝试以下修正？")
